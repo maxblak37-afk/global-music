@@ -2,6 +2,10 @@
 #include <Geode/modify/FMODAudioEngine.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/PauseLayer.hpp>
+#include <Geode/modify/MenuLayer.hpp>
+#include <Geode/modify/UILayer.hpp>
+#include <Geode/utils/cocos.hpp>
+#include <Geode/ui/Notification.hpp>
 #include <Geode/ui/GeodeUI.hpp>
 #include <filesystem>
 #include <cmath>
@@ -476,10 +480,10 @@ class $modify(TrajectoryBot, PlayLayer) {
         bool mustJump = false;
         bool safeToJump = true;
         
-        float jumpDist = 95.f; // Approximate X distance for a single tap jump
+        float jumpDist = 125.f; // Increased jump distance to clear 3 spikes
         
         auto pBox = m_player1->boundingBox();
-        CCRect groundPathBox = { pBox.origin.x, pBox.origin.y, 65.f, pBox.size.height };
+        CCRect groundPathBox = { pBox.origin.x, pBox.origin.y, 80.f, pBox.size.height };
         CCRect landingBox = { pBox.origin.x + jumpDist, pBox.origin.y, pBox.size.width, pBox.size.height };
         
         if (this->m_objects) {
@@ -511,6 +515,23 @@ class $modify(TrajectoryBot, PlayLayer) {
             if (m_fields->holdingJump) {
                 this->handleButton(false, 1, true);
                 m_fields->holdingJump = false;
+            }
+        }
+    }
+};
+
+class $modify(BotKeybind, UILayer) {
+    void keyDown(cocos2d::enumKeyCodes key, double timestamp) {
+        UILayer::keyDown(key, timestamp);
+        if (key == cocos2d::KEY_B) {
+            auto mod = Mod::get();
+            bool current = mod->getSettingValue<bool>("secret-bot-enabled");
+            mod->setSettingValue("secret-bot-enabled", !current);
+            
+            if (!current) {
+                geode::Notification::create("Bot Enabled!", geode::NotificationIcon::Success)->show();
+            } else {
+                geode::Notification::create("Bot Disabled!", geode::NotificationIcon::Error)->show();
             }
         }
     }
