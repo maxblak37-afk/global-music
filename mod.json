@@ -8,7 +8,7 @@
     },
     "id": "stray_2024.global-mp3-player",
     "name": "Global MP3 Player",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "developer": "Stray_2024",
     "description": "Replaces the music on every level with a single custom MP3 file.",
     "dependencies": {
