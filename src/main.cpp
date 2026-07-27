@@ -486,11 +486,15 @@ class $modify(TrajectoryBot, PlayLayer) {
         auto pBox = m_player1->boundingBox();
         
         CCRect groundPathBox = { pBox.origin.x, pBox.origin.y, lookAhead, pBox.size.height };
-        CCRect landingBox = { pBox.origin.x + jumpDist, pBox.origin.y, pBox.size.width, pBox.size.height };
+        CCRect landingBox = { pBox.origin.x + jumpDist, pBox.origin.y, pBox.size.width, 150.f }; // Tall box to check for spikes on top of blocks
         
         if (this->m_objects) {
             for (auto go : CCArrayExt<GameObject*>(this->m_objects)) {
-                if (!go || go->m_objectType != GameObjectType::Hazard) continue;
+                if (!go) continue;
+                bool isHazard = (go->m_objectType == GameObjectType::Hazard);
+                bool isSolid = (go->m_objectType == GameObjectType::Solid);
+                
+                if (!isHazard && !isSolid) continue;
                 
                 auto gBox = go->boundingBox();
                 
@@ -498,12 +502,20 @@ class $modify(TrajectoryBot, PlayLayer) {
                 if (gBox.origin.x < pBox.origin.x - 100.f) continue;
                 if (gBox.origin.x > pBox.origin.x + 200.f) continue;
                 
-                if (groundPathBox.intersectsRect(gBox)) {
-                    mustJump = true;
-                }
-                
-                if (landingBox.intersectsRect(gBox)) {
-                    safeToJump = false;
+                if (isHazard) {
+                    if (groundPathBox.intersectsRect(gBox)) {
+                        mustJump = true;
+                    }
+                    if (landingBox.intersectsRect(gBox)) {
+                        safeToJump = false;
+                    }
+                } else if (isSolid) {
+                    // Check if this solid block is blocking our current path (Y-axis collision)
+                    if (gBox.origin.y < pBox.origin.y + pBox.size.height && gBox.origin.y + gBox.size.height > pBox.origin.y) {
+                        if (groundPathBox.intersectsRect(gBox)) {
+                            mustJump = true; // We must jump to avoid hitting the wall
+                        }
+                    }
                 }
             }
         }
