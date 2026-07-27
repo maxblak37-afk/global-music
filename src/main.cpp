@@ -475,15 +475,16 @@ class $modify(TrajectoryBot, PlayLayer) {
     void postUpdate(float dt) {
         PlayLayer::postUpdate(dt);
         if (!Mod::get()->getSettingValue<bool>("secret-bot-enabled")) return;
-        if (!m_player1 || !m_player1->m_isOnGround) return;
+        if (!m_player1) return;
         
         bool mustJump = false;
         bool safeToJump = true;
         
-        float jumpDist = 125.f; // Increased jump distance to clear 3 spikes
+        float lookAhead = 65.f;
+        float jumpDist = 110.f; 
         
         auto pBox = m_player1->boundingBox();
-        CCRect groundPathBox = { pBox.origin.x, pBox.origin.y, 80.f, pBox.size.height };
+        CCRect groundPathBox = { pBox.origin.x, pBox.origin.y, lookAhead, pBox.size.height };
         CCRect landingBox = { pBox.origin.x + jumpDist, pBox.origin.y, pBox.size.width, pBox.size.height };
         
         if (this->m_objects) {
@@ -496,6 +497,11 @@ class $modify(TrajectoryBot, PlayLayer) {
                 if (gBox.origin.x < pBox.origin.x - 100.f) continue;
                 if (gBox.origin.x > pBox.origin.x + 200.f) continue;
                 
+                // Shrink bounding box to approximate the REAL GD spike hitbox
+                gBox.origin.x += 10.f;
+                gBox.size.width -= 20.f;
+                gBox.size.height -= 15.f;
+                
                 if (groundPathBox.intersectsRect(gBox)) {
                     mustJump = true;
                 }
@@ -506,12 +512,20 @@ class $modify(TrajectoryBot, PlayLayer) {
             }
         }
         
-        if (mustJump && safeToJump) {
-            if (!m_fields->holdingJump) {
-                this->handleButton(true, 1, true); // Jump
-                m_fields->holdingJump = true;
+        if (m_player1->m_isOnGround) {
+            if (mustJump && safeToJump) {
+                if (!m_fields->holdingJump) {
+                    this->handleButton(true, 1, true); // Jump
+                    m_fields->holdingJump = true;
+                }
+            } else {
+                if (m_fields->holdingJump) {
+                    this->handleButton(false, 1, true);
+                    m_fields->holdingJump = false;
+                }
             }
         } else {
+            // We are in the air! Release the button so we don't automatically jump again when we land
             if (m_fields->holdingJump) {
                 this->handleButton(false, 1, true);
                 m_fields->holdingJump = false;
