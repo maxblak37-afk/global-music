@@ -481,7 +481,7 @@ class $modify(TrajectoryBot, PlayLayer) {
         bool safeToJump = true;
         bool groundAhead = false;
         
-        float lookAheadSpike = 22.f;
+        float lookAheadSpike = 8.f;
         float lookAheadSolid = 65.f;
         float gapLookAhead = 15.f;
         float jumpDist = 130.f; 
