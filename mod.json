@@ -8,7 +8,7 @@
     },
     "id": "stray_2024.global-mp3-player",
     "name": "Global MP3 Player",
-    "version": "1.3.0",
+    "version": "1.5.0",
     "developer": "Stray_2024",
     "description": "Replaces the music on every level with a single custom MP3 file.",
     "dependencies": {
@@ -49,16 +49,6 @@
                 "max": 5.0,
                 "slider": true
             }
-        },
-        "screen-pulse": {
-            "name": "Screen pulse on bass",
-            "type": "bool",
-            "default": false
-        },
-        "side-waves": {
-            "name": "Side bass wave bars",
-            "type": "bool",
-            "default": false
         }
     }
 }
