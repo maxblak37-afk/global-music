@@ -503,7 +503,7 @@ class $modify(TrajectoryBot, PlayLayer) {
                 if (!go) continue;
                 auto gBox = go->boundingBox();
                 
-                if (gBox.origin.x < pBox.origin.x) continue;
+                if (gBox.origin.x + gBox.size.width < pBox.origin.x) continue;
                 if (gBox.origin.x > pBox.origin.x + 200.f) continue;
                 
                 bool isHazard = go->m_objectType == GameObjectType::Hazard;
