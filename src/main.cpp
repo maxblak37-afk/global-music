@@ -480,10 +480,16 @@ class $modify(TrajectoryBot, PlayLayer) {
         bool mustJump = false;
         bool safeToJump = true;
         
-        float lookAhead = 65.f;
-        float jumpDist = 110.f; 
+        float lookAhead = 45.f;
+        float jumpDist = 105.f; 
         
         auto pBox = m_player1->boundingBox();
+        // Shrink player box to match actual GD death hitbox (much smaller than visual)
+        pBox.origin.x += 9.f;
+        pBox.origin.y += 9.f;
+        pBox.size.width -= 18.f;
+        pBox.size.height -= 18.f;
+        
         CCRect groundPathBox = { pBox.origin.x, pBox.origin.y, lookAhead, pBox.size.height };
         CCRect landingBox = { pBox.origin.x + jumpDist, pBox.origin.y, pBox.size.width, pBox.size.height };
         
