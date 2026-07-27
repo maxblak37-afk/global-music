@@ -510,8 +510,8 @@ class $modify(TrajectoryBot, PlayLayer) {
                         safeToJump = false;
                     }
                 } else if (isSolid) {
-                    // Check if this solid block is blocking our current path (Y-axis collision)
-                    if (gBox.origin.y < pBox.origin.y + pBox.size.height && gBox.origin.y + gBox.size.height > pBox.origin.y) {
+                    // Check if this solid block is a wall (at least 2 pixels above our bottom)
+                    if (gBox.origin.y < pBox.origin.y + pBox.size.height && gBox.origin.y + gBox.size.height > pBox.origin.y + 2.f) {
                         if (groundPathBox.intersectsRect(gBox)) {
                             mustJump = true; // We must jump to avoid hitting the wall
                         }
@@ -520,22 +520,15 @@ class $modify(TrajectoryBot, PlayLayer) {
             }
         }
         
-        if (m_player1->m_isOnGround) {
-            if (mustJump && safeToJump) {
-                if (!m_fields->holdingJump) {
-                    this->handleButton(true, 1, true); // Jump
-                    m_fields->holdingJump = true;
-                }
-            } else {
-                if (m_fields->holdingJump) {
-                    this->handleButton(false, 1, true);
-                    m_fields->holdingJump = false;
-                }
+        // Let the mustJump flag control the button completely, allowing buffered jumps!
+        if (mustJump && safeToJump) {
+            if (!m_fields->holdingJump) {
+                this->handleButton(true, 1, true); // Jump
+                m_fields->holdingJump = true;
             }
         } else {
-            // We are in the air! Release the button so we don't automatically jump again when we land
             if (m_fields->holdingJump) {
-                this->handleButton(false, 1, true);
+                this->handleButton(false, 1, true); // Release
                 m_fields->holdingJump = false;
             }
         }
