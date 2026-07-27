@@ -26,7 +26,12 @@ add_subdirectory($ENV{GEODE_SDK} ${CMAKE_CURRENT_BINARY_DIR}/geode)
 
 # Set up dependencies, resources, and link Geode.
 setup_geode_mod(${PROJECT_NAME})
-target_compile_options(${PROJECT_NAME} PRIVATE /utf-8)
+if(MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(${PROJECT_NAME} PRIVATE /utf-8)
+else()
+    target_compile_options(${PROJECT_NAME} PRIVATE -finput-charset=utf-8 -fexec-charset=utf-8)
+endif()
+
 
 if(MSVC)
     set_target_properties(${PROJECT_NAME} PROPERTIES
