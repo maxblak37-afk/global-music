@@ -480,7 +480,7 @@ class $modify(TrajectoryBot, PlayLayer) {
         bool mustJump = false;
         bool safeToJump = true;
         
-        float lookAhead = 40.f;
+        float lookAhead = 33.f;
         float jumpDist = 130.f; 
         
         auto pBox = m_player1->boundingBox();
