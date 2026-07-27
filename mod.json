@@ -8,30 +8,32 @@
     },
     "id": "stray_2024.global-mp3-player",
     "name": "Global MP3 Player",
-    "version": "1.5.0",
+    "version": "2.0.0",
     "developer": "Stray_2024",
-    "description": "Replaces the music on every level with a single custom MP3 file.",
+    "description": "Replaces level music with your own MP3 and adds beat-reactive visual effects.",
     "dependencies": {
         "geode.node-ids": ">=v1.23.3"
     },
     "settings": {
         "enable-replacement": {
-            "name": "Enable music replacement",
+            "name": "Enable Music Replacement",
+            "description": "Master switch for replacing game music with your custom track.",
             "type": "bool",
             "default": true
         },
         "music-path": {
             "name": "Path to MP3 file",
+            "description": "Select the MP3 file you want to play instead of level music.",
             "type": "file",
             "control": {
                 "filters": [
-                    { "description": "Audio files", "extensions": ["mp3"] }
+                    { "description": "Audio files", "extensions": ["mp3", "ogg", "wav", "flac"] }
                 ]
             },
             "default": ""
         },
         "music-volume": {
-            "name": "Custom music volume",
+            "name": "Custom Music Volume",
             "type": "float",
             "default": 1.0,
             "control": {
@@ -41,7 +43,7 @@
             }
         },
         "fade-duration": {
-            "name": "Fade in/out duration (seconds)",
+            "name": "Fade Duration (seconds)",
             "type": "float",
             "default": 1.0,
             "control": {
@@ -49,6 +51,71 @@
                 "max": 5.0,
                 "slider": true
             }
+        },
+        "replace-menu-music": {
+            "name": "Replace Menu Music",
+            "description": "Also replaces the main menu music.",
+            "type": "bool",
+            "default": false
+        },
+        "screen-pulse": {
+            "name": "Screen Pulse",
+            "description": "Flashes the screen with an additive overlay on strong beats.",
+            "type": "bool",
+            "default": false
+        },
+        "random-color-pulse": {
+            "name": "BG Color Change (Beat)",
+            "description": "Changes the ACTUAL level background color to a random vivid color on each beat.",
+            "type": "bool",
+            "default": false
+        },
+        "side-waves": {
+            "name": "Side Waves",
+            "description": "Adds reactive wave bars on both sides of the screen.",
+            "type": "bool",
+            "default": false
+        },
+        "screen-shake": {
+            "name": "Screen Shake",
+            "description": "Shakes the screen on strong beats for extra immersion.",
+            "type": "bool",
+            "default": false
+        },
+        "beat-sensitivity": {
+            "name": "Beat Sensitivity",
+            "description": "How sensitive the beat detector is. Higher = more frequent beats.",
+            "type": "float",
+            "default": 0.5,
+            "control": {
+                "min": 0.0,
+                "max": 1.0,
+                "slider": true
+            }
+        },
+        "player-pulse": {
+            "name": "Player Pulse",
+            "description": "Scales and flashes the player icon on beats.",
+            "type": "bool",
+            "default": false
+        },
+        "beat-particles": {
+            "name": "Beat Particles",
+            "description": "Emits particle explosions on strong beats.",
+            "type": "bool",
+            "default": false
+        },
+        "chromatic-glitch": {
+            "name": "Chromatic Glitch",
+            "description": "Adds RGB split glitch effect on beats.",
+            "type": "bool",
+            "default": false
+        },
+        "show-mini-player": {
+            "name": "Show Mini-Player",
+            "description": "Shows track name and progress bar in game.",
+            "type": "bool",
+            "default": true
         }
     }
 }
