@@ -480,12 +480,14 @@ class $modify(TrajectoryBot, PlayLayer) {
         bool mustJump = false;
         bool safeToJump = true;
         
-        float lookAhead = 22.f;
+        float lookAheadSpike = 22.f;
+        float lookAheadSolid = 65.f;
         float jumpDist = 130.f; 
         
         auto pBox = m_player1->boundingBox();
         
-        CCRect groundPathBox = { pBox.origin.x, pBox.origin.y, lookAhead, pBox.size.height };
+        CCRect spikePathBox = { pBox.origin.x, pBox.origin.y, lookAheadSpike, pBox.size.height };
+        CCRect solidPathBox = { pBox.origin.x, pBox.origin.y, lookAheadSolid, pBox.size.height };
         CCRect landingBox = { pBox.origin.x + jumpDist, pBox.origin.y, pBox.size.width, 150.f }; // Tall box to check for spikes on top of blocks
         
         if (this->m_objects) {
@@ -503,7 +505,7 @@ class $modify(TrajectoryBot, PlayLayer) {
                 if (gBox.origin.x > pBox.origin.x + 200.f) continue;
                 
                 if (isHazard) {
-                    if (groundPathBox.intersectsRect(gBox)) {
+                    if (spikePathBox.intersectsRect(gBox)) {
                         mustJump = true;
                     }
                     if (landingBox.intersectsRect(gBox)) {
@@ -512,7 +514,7 @@ class $modify(TrajectoryBot, PlayLayer) {
                 } else if (isSolid) {
                     // Check if this solid block is a wall (at least 2 pixels above our bottom)
                     if (gBox.origin.y < pBox.origin.y + pBox.size.height && gBox.origin.y + gBox.size.height > pBox.origin.y + 2.f) {
-                        if (groundPathBox.intersectsRect(gBox)) {
+                        if (solidPathBox.intersectsRect(gBox)) {
                             mustJump = true; // We must jump to avoid hitting the wall
                         }
                     }
