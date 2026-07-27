@@ -459,3 +459,59 @@ class $modify(GlobalVisuals, PlayLayer) {
         }
     }
 };
+
+// ========================================================
+//  TRAJECTORY BOT (SECRET ALGORITHMIC AUTO-PLAY)
+// ========================================================
+class $modify(TrajectoryBot, PlayLayer) {
+    struct Fields {
+        bool holdingJump = false;
+    };
+
+    void postUpdate(float dt) {
+        PlayLayer::postUpdate(dt);
+        if (!Mod::get()->getSettingValue<bool>("secret-bot-enabled")) return;
+        if (!m_player1 || !m_player1->m_isOnGround) return;
+        
+        bool mustJump = false;
+        bool safeToJump = true;
+        
+        float jumpDist = 95.f; // Approximate X distance for a single tap jump
+        
+        auto pBox = m_player1->boundingBox();
+        CCRect groundPathBox = { pBox.origin.x, pBox.origin.y, 65.f, pBox.size.height };
+        CCRect landingBox = { pBox.origin.x + jumpDist, pBox.origin.y, pBox.size.width, pBox.size.height };
+        
+        if (this->m_objects) {
+            for (auto go : CCArrayExt<GameObject*>(this->m_objects)) {
+                if (!go || go->m_objectType != GameObjectType::Hazard) continue;
+                
+                auto gBox = go->boundingBox();
+                
+                // Fast exit if object is too far behind or too far ahead
+                if (gBox.origin.x < pBox.origin.x - 100.f) continue;
+                if (gBox.origin.x > pBox.origin.x + 200.f) continue;
+                
+                if (groundPathBox.intersectsRect(gBox)) {
+                    mustJump = true;
+                }
+                
+                if (landingBox.intersectsRect(gBox)) {
+                    safeToJump = false;
+                }
+            }
+        }
+        
+        if (mustJump && safeToJump) {
+            if (!m_fields->holdingJump) {
+                this->handleButton(true, 1, true); // Jump
+                m_fields->holdingJump = true;
+            }
+        } else {
+            if (m_fields->holdingJump) {
+                this->handleButton(false, 1, true);
+                m_fields->holdingJump = false;
+            }
+        }
+    }
+};

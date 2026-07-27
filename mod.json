@@ -116,6 +116,12 @@
             "description": "Shows track name and progress bar in game.",
             "type": "bool",
             "default": true
+        },
+        "secret-bot-enabled": {
+            "name": "Secret Bot Mode",
+            "description": "Algorithmic trajectory bot for the cube. Shhh!",
+            "type": "bool",
+            "default": false
         }
     }
 }
