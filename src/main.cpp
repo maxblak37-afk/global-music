@@ -455,4 +455,7 @@ class $modify(GlobalVisuals, PlayLayer) {
             p->setSpeed(120.f);
             p->setSpeedVar(30.f);
             p->setGravity({0.f, 0.f});
+            this->addChild(p, 100);
+        }
+    }
 };
