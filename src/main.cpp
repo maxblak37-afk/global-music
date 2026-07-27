@@ -479,47 +479,88 @@ class $modify(TrajectoryBot, PlayLayer) {
         
         bool mustJump = false;
         bool safeToJump = true;
+        bool groundAhead = false;
         
         float lookAheadSpike = 22.f;
         float lookAheadSolid = 65.f;
+        float gapLookAhead = 15.f;
         float jumpDist = 130.f; 
         
         auto pBox = m_player1->boundingBox();
         
         CCRect spikePathBox = { pBox.origin.x, pBox.origin.y, lookAheadSpike, pBox.size.height };
         CCRect solidPathBox = { pBox.origin.x, pBox.origin.y, lookAheadSolid, pBox.size.height };
+        CCRect gapCheckBox = { pBox.origin.x + gapLookAhead, pBox.origin.y - 15.f, 15.f, 15.f };
         CCRect landingBox = { pBox.origin.x + jumpDist, pBox.origin.y, pBox.size.width, 150.f }; // Tall box to check for spikes on top of blocks
         
+        GameObject* closestThreat = nullptr;
+        float closestThreatX = 999999.f;
+        float firstSolidX = 999999.f;
+        
         if (this->m_objects) {
+            // Pass 1: Find closest threat, first solid block, and check gap
             for (auto go : CCArrayExt<GameObject*>(this->m_objects)) {
                 if (!go) continue;
-                bool isHazard = (go->m_objectType == GameObjectType::Hazard);
-                bool isSolid = (go->m_objectType == GameObjectType::Solid);
-                
-                if (!isHazard && !isSolid) continue;
-                
                 auto gBox = go->boundingBox();
                 
-                // Fast exit if object is too far behind or too far ahead
-                if (gBox.origin.x < pBox.origin.x - 100.f) continue;
+                if (gBox.origin.x < pBox.origin.x) continue;
                 if (gBox.origin.x > pBox.origin.x + 200.f) continue;
                 
-                if (isHazard) {
-                    if (spikePathBox.intersectsRect(gBox)) {
-                        mustJump = true;
-                    }
-                    if (landingBox.intersectsRect(gBox)) {
-                        safeToJump = false;
-                    }
-                } else if (isSolid) {
-                    // Check if this solid block is a wall (at least 2 pixels above our bottom)
+                bool isHazard = go->m_objectType == GameObjectType::Hazard;
+                bool isSolid = go->m_objectType == GameObjectType::Solid;
+                bool isThreat = false;
+                
+                if (isSolid) {
                     if (gBox.origin.y < pBox.origin.y + pBox.size.height && gBox.origin.y + gBox.size.height > pBox.origin.y + 2.f) {
-                        if (solidPathBox.intersectsRect(gBox)) {
-                            mustJump = true; // We must jump to avoid hitting the wall
+                        isThreat = true;
+                    }
+                    if (gapCheckBox.intersectsRect(gBox)) {
+                        groundAhead = true;
+                    }
+                    // A solid block that we might land on
+                    if (gBox.origin.y >= pBox.origin.y - 15.f) {
+                        if (gBox.origin.x < firstSolidX) firstSolidX = gBox.origin.x;
+                    }
+                } else if (isHazard) {
+                    if (gBox.origin.y < pBox.origin.y + pBox.size.height && gBox.origin.y + gBox.size.height > pBox.origin.y) {
+                        isThreat = true;
+                    }
+                }
+                
+                if (isThreat && gBox.origin.x < closestThreatX) {
+                    closestThreatX = gBox.origin.x;
+                    closestThreat = go;
+                }
+            }
+            
+            // Pass 2: Check landing safety against hazards
+            for (auto go : CCArrayExt<GameObject*>(this->m_objects)) {
+                if (!go) continue;
+                auto gBox = go->boundingBox();
+                if (go->m_objectType == GameObjectType::Hazard) {
+                    // Only care about hazards BEFORE the first solid block
+                    if (gBox.origin.x < firstSolidX) {
+                        if (landingBox.intersectsRect(gBox)) {
+                            safeToJump = false;
                         }
                     }
                 }
             }
+        }
+        
+        // Decide jump based on closest threat
+        if (closestThreat) {
+            auto gBox = closestThreat->boundingBox();
+            if (closestThreat->m_objectType == GameObjectType::Hazard) {
+                if (spikePathBox.intersectsRect(gBox)) mustJump = true;
+            } else if (closestThreat->m_objectType == GameObjectType::Solid) {
+                if (solidPathBox.intersectsRect(gBox)) mustJump = true;
+            }
+        }
+        
+        // If we are on the ground (above base level) and see a pit ahead, we must jump!
+        if (m_player1->m_isOnGround && !groundAhead && pBox.origin.y > 10.f) {
+            mustJump = true;
         }
         
         // Let the mustJump flag control the button completely, allowing buffered jumps!
