@@ -605,7 +605,7 @@ class $modify(TrajectoryBot, PlayLayer) {
             spikeTriggerDist = -2.f; // Jump slightly early for double spikes
         }
         
-        float solidTriggerDist = 35.f; // Jump early for walls/stairs
+        float solidTriggerDist = 15.f; // Optimal distance to clear stairs (was 35)
         float firstSolidX = 999999.f;
         
         if (this->m_objects) {
@@ -636,7 +636,7 @@ class $modify(TrajectoryBot, PlayLayer) {
                 if (go->m_objectType == GameObjectType::Solid) {
                     // Threat: Wall or staircase (higher than our bottom edge)
                     if (objTop > playerBottom + 2.f && objBottom < playerTop) {
-                        if (dist <= solidTriggerDist && dist >= solidTriggerDist - 40.f) {
+                        if (dist <= solidTriggerDist && dist >= -20.f) {
                             mustJump = true;
                         }
                     }
@@ -649,7 +649,7 @@ class $modify(TrajectoryBot, PlayLayer) {
                 } else if (go->m_objectType == GameObjectType::Hazard) {
                     // Threat: Spike on our level
                     if (objTop > playerBottom + 2.f && objBottom < playerTop) {
-                        if (dist <= spikeTriggerDist && dist >= spikeTriggerDist - 40.f) {
+                        if (dist <= spikeTriggerDist && dist >= -20.f) {
                             mustJump = true;
                         }
                     }
@@ -667,8 +667,8 @@ class $modify(TrajectoryBot, PlayLayer) {
                 
                 // Only care about hazards BEFORE the first solid block
                 if (objLeft < firstSolidX) {
-                    // If it's in our landing zone (~90 to 140 pixels ahead)
-                    if (objLeft < playerRight + 140.f && objRight > playerRight + 90.f) {
+                    // If it's a NEW hazard in our landing zone (starts 70 to 140 pixels ahead)
+                    if (objLeft < playerRight + 140.f && objLeft > playerRight + 70.f) {
                         safeToJump = false;
                     }
                 }
