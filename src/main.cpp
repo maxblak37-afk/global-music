@@ -470,12 +470,82 @@ class $modify(GlobalVisuals, PlayLayer) {
 class $modify(TrajectoryBot, PlayLayer) {
     struct Fields {
         bool holdingJump = false;
+        float ufoFlapTimer = 0.f;
     };
 
     void postUpdate(float dt) {
         PlayLayer::postUpdate(dt);
         if (!Mod::get()->getSettingValue<bool>("secret-bot-enabled")) return;
         if (!m_player1) return;
+        
+        bool isShip = m_player1->m_isShip;
+        bool isUfo = m_player1->m_isBird;
+        bool isWave = m_player1->m_isDart;
+        
+        auto pBox = m_player1->boundingBox();
+        
+        if (isShip || isUfo || isWave) {
+            float lookAhead = 150.f; // Look further for flying
+            float playerX = pBox.origin.x;
+            float playerY = pBox.origin.y + pBox.size.height / 2.f; // center Y
+            
+            float floorY = 0.f; // Base ground
+            float ceilingY = 1000.f; // Default high ceiling
+            
+            if (this->m_objects) {
+                for (auto go : CCArrayExt<GameObject*>(this->m_objects)) {
+                    if (!go) continue;
+                    auto gBox = go->boundingBox();
+                    
+                    // Only consider objects in our immediate path ahead
+                    if (gBox.origin.x + gBox.size.width < playerX) continue;
+                    if (gBox.origin.x > playerX + lookAhead) continue;
+                    
+                    bool isObstacle = (go->m_objectType == GameObjectType::Solid || go->m_objectType == GameObjectType::Hazard);
+                    if (!isObstacle) continue;
+                    
+                    float objCenterY = gBox.origin.y + gBox.size.height / 2.f;
+                    
+                    if (objCenterY < playerY) {
+                        float topEdge = gBox.origin.y + gBox.size.height;
+                        if (topEdge > floorY) {
+                            floorY = topEdge;
+                        }
+                    } else {
+                        float bottomEdge = gBox.origin.y;
+                        if (bottomEdge < ceilingY) {
+                            ceilingY = bottomEdge;
+                        }
+                    }
+                }
+            }
+            
+            if (ceilingY == 1000.f) {
+                ceilingY = floorY + 150.f;
+            }
+            
+            float targetY = (floorY + ceilingY) / 2.f;
+            bool shouldGoUp = playerY < targetY;
+            
+            if (isShip || isWave) {
+                if (shouldGoUp && !m_fields->holdingJump) {
+                    this->handleButton(true, 1, true);
+                    m_fields->holdingJump = true;
+                } else if (!shouldGoUp && m_fields->holdingJump) {
+                    this->handleButton(false, 1, true);
+                    m_fields->holdingJump = false;
+                }
+            } else if (isUfo) {
+                m_fields->ufoFlapTimer -= dt;
+                if (shouldGoUp && m_fields->ufoFlapTimer <= 0.f) {
+                    this->handleButton(true, 1, true);
+                    this->handleButton(false, 1, true); // instant tap
+                    m_fields->ufoFlapTimer = 0.2f;
+                }
+            }
+            
+            return; // Skip cube logic
+        }
         
         bool mustJump = false;
         bool safeToJump = true;
@@ -485,8 +555,6 @@ class $modify(TrajectoryBot, PlayLayer) {
         float lookAheadSolid = 65.f;
         float gapLookAhead = 15.f;
         float jumpDist = 130.f; 
-        
-        auto pBox = m_player1->boundingBox();
         
         CCRect spikePathBox = { pBox.origin.x, pBox.origin.y, lookAheadSpike, pBox.size.height };
         CCRect solidPathBox = { pBox.origin.x, pBox.origin.y, lookAheadSolid, pBox.size.height };
