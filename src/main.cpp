@@ -467,12 +467,43 @@ class $modify(GlobalVisuals, PlayLayer) {
 // ========================================================
 //  TRAJECTORY BOT (SECRET ALGORITHMIC AUTO-PLAY)
 // ========================================================
+struct DeathRecord {
+    float x;
+    float y;
+    bool isShipOrWave;
+    float actionX;
+    bool wasJump;
+};
+std::vector<DeathRecord> g_deaths;
+
 class $modify(TrajectoryBot, PlayLayer) {
     struct Fields {
         bool holdingJump = false;
         float ufoFlapTimer = 0.f;
         float prevPlayerY = 0.f;
+        float lastActionX = 0.f;
+        bool lastActionWasJump = false;
     };
+    
+    bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
+        g_deaths.clear();
+        return PlayLayer::init(level, useReplay, dontCreateObjects);
+    }
+    
+    void destroyPlayer(PlayerObject* player, GameObject* p1) {
+        if (Mod::get()->getSettingValue<bool>("secret-bot-enabled")) {
+            if (player == m_player1) {
+                DeathRecord rec;
+                rec.x = player->boundingBox().origin.x;
+                rec.y = player->boundingBox().origin.y;
+                rec.isShipOrWave = player->m_isShip || player->m_isDart;
+                rec.actionX = m_fields->lastActionX;
+                rec.wasJump = m_fields->lastActionWasJump;
+                g_deaths.push_back(rec);
+            }
+        }
+        PlayLayer::destroyPlayer(player, p1);
+    }
 
     void postUpdate(float dt) {
         PlayLayer::postUpdate(dt);
@@ -615,6 +646,18 @@ class $modify(TrajectoryBot, PlayLayer) {
                 // Pull target towards this gate if it's out of bounds
                 if (targetY > gapMax) targetY = gapMax;
                 if (targetY < gapMin) targetY = gapMin;
+            }
+            
+            // Apply Death Memory Repulsion for Ship/Wave
+            for (const auto& death : g_deaths) {
+                if (!death.isShipOrWave) continue;
+                if (std::abs(playerX - death.x) < 60.f) {
+                    if (playerY < death.y) {
+                        targetY -= 30.f; // we died above, push down
+                    } else {
+                        targetY += 30.f; // we died below, push up
+                    }
+                }
             }
             
             // Predict future Y to act as a PD controller (brakes downward velocity)
@@ -798,16 +841,37 @@ class $modify(TrajectoryBot, PlayLayer) {
             mustJump = true;
         }
         
-        // Let the mustJump flag control the button completely, allowing buffered jumps!
-        if (mustJump && safeToJump) {
+        // Decide if we should jump
+        bool shouldJump = (mustJump && safeToJump && !groundAhead);
+        
+        // Death Memory trial-and-error for Cube
+        for (const auto& death : g_deaths) {
+            if (death.isShipOrWave) continue;
+            // If we are near the exact spot we made a fatal decision
+            if (std::abs(playerX - death.actionX) < 15.f) {
+                if (death.wasJump && shouldJump) {
+                    shouldJump = false; // We died by jumping here! Wait!
+                } else if (!death.wasJump && !shouldJump && mustJump) {
+                    shouldJump = true; // We died by waiting here! Jump!
+                }
+            }
+        }
+        
+        if (shouldJump) {
             if (!m_fields->holdingJump) {
-                this->handleButton(true, 1, true); // Jump
+                this->handleButton(true, 1, true);
                 m_fields->holdingJump = true;
             }
+            m_fields->lastActionX = playerX;
+            m_fields->lastActionWasJump = true;
         } else {
             if (m_fields->holdingJump) {
-                this->handleButton(false, 1, true); // Release
+                this->handleButton(false, 1, true);
                 m_fields->holdingJump = false;
+            }
+            if (mustJump) {
+                m_fields->lastActionX = playerX;
+                m_fields->lastActionWasJump = false;
             }
         }
     }
