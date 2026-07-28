@@ -963,16 +963,47 @@ class $modify(TrajectoryBot, PlayLayer) {
         float curDistToSolid = (firstSolidX != 99999.f) ? (firstSolidX - playerRight) : 99999.f;
         float curDistToHazard = (closestHazardX != 99999.f) ? (closestHazardX - playerRight) : 99999.f;
         
+        bool teacherJumpNow = false;
+        bool teacherWait = false;
+        
         if (isBotEnabled) {
             for (const auto& pat : BrainManager::patterns) {
                 if (pat.isShipOrWave) continue;
-                float ds = pat.distToSolid - curDistToSolid;
-                float dh = pat.distToHazard - curDistToHazard;
-                float dist = std::sqrt(ds*ds + dh*dh);
-                if (dist < 15.f && pat.safeToJump == safeToJump) { // Very similar geometry!
-                    if (pat.isTeacherPattern) {
-                        if (pat.actionWasJump) shouldJump = true; // We were taught to jump here!
-                    } else {
+                
+                if (pat.isTeacherPattern) {
+                    float diffMain = 0.f;
+                    bool isValidSetup = false;
+                    
+                    if (pat.distToSolid < 90000.f && curDistToSolid < 90000.f) {
+                        diffMain = curDistToSolid - pat.distToSolid;
+                        isValidSetup = true;
+                        if (pat.distToHazard < 90000.f && curDistToHazard < 90000.f) {
+                            float diffHazard = curDistToHazard - pat.distToHazard;
+                            if (std::abs(diffMain - diffHazard) > 15.f) isValidSetup = false;
+                        } else if ((pat.distToHazard < 90000.f) != (curDistToHazard < 90000.f)) {
+                            isValidSetup = false;
+                        }
+                    } else if (pat.distToHazard < 90000.f && curDistToHazard < 90000.f) {
+                        diffMain = curDistToHazard - pat.distToHazard;
+                        isValidSetup = true;
+                        if ((pat.distToSolid < 90000.f) != (curDistToSolid < 90000.f)) {
+                            isValidSetup = false;
+                        }
+                    }
+                    
+                    if (isValidSetup && pat.safeToJump == safeToJump) {
+                        if (diffMain > 0.f && diffMain < 60.f) {
+                            teacherWait = true;
+                        }
+                        if (diffMain <= 12.f && diffMain >= -12.f) {
+                            teacherJumpNow = true;
+                        }
+                    }
+                } else {
+                    float ds = pat.distToSolid - curDistToSolid;
+                    float dh = pat.distToHazard - curDistToHazard;
+                    float dist = std::sqrt(ds*ds + dh*dh);
+                    if (dist < 15.f && pat.safeToJump == safeToJump) { // Very similar geometry!
                         if (pat.actionWasJump && shouldJump) {
                             shouldJump = false; // We jumped in this setup and died. Wait!
                         } else if (!pat.actionWasJump && !shouldJump && mustJump) {
@@ -981,6 +1012,12 @@ class $modify(TrajectoryBot, PlayLayer) {
                     }
                 }
             }
+        }
+        
+        if (teacherWait && !teacherJumpNow) {
+            shouldJump = false;
+        } else if (teacherJumpNow) {
+            shouldJump = true;
         }
         
         // Save the pattern we are about to act on
