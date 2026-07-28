@@ -551,83 +551,84 @@ class $modify(TrajectoryBot, PlayLayer) {
         bool safeToJump = true;
         bool groundAhead = false;
         
-        float lookAheadSpike = 8.f;
-        float lookAheadSolid = 65.f;
-        float gapLookAhead = 15.f;
-        float jumpDist = 130.f; 
+        float playerLeft = pBox.origin.x;
+        float playerRight = pBox.origin.x + pBox.size.width;
+        float playerBottom = pBox.origin.y;
+        float playerTop = pBox.origin.y + pBox.size.height;
         
-        CCRect spikePathBox = { pBox.origin.x, pBox.origin.y, lookAheadSpike, pBox.size.height };
-        CCRect solidPathBox = { pBox.origin.x, pBox.origin.y, lookAheadSolid, pBox.size.height };
-        CCRect gapCheckBox = { pBox.origin.x + gapLookAhead, pBox.origin.y - 15.f, 15.f, 15.f };
-        CCRect landingBox = { pBox.origin.x + jumpDist, pBox.origin.y, pBox.size.width, 150.f }; // Tall box to check for spikes on top of blocks
-        
-        GameObject* closestThreat = nullptr;
-        float closestThreatX = 999999.f;
+        float spikeTriggerDist = -8.f; // 2 pixels clearance from visual hitbox
+        float solidTriggerDist = 35.f; // Jump early for walls/stairs
         float firstSolidX = 999999.f;
         
         if (this->m_objects) {
-            // Pass 1: Find closest threat, first solid block, and check gap
             for (auto go : CCArrayExt<GameObject*>(this->m_objects)) {
                 if (!go) continue;
                 auto gBox = go->boundingBox();
+                float objLeft = gBox.origin.x;
+                float objRight = gBox.origin.x + gBox.size.width;
+                float objBottom = gBox.origin.y;
+                float objTop = gBox.origin.y + gBox.size.height;
                 
-                if (gBox.origin.x + gBox.size.width < pBox.origin.x) continue;
-                if (gBox.origin.x > pBox.origin.x + 200.f) continue;
-                
-                bool isHazard = go->m_objectType == GameObjectType::Hazard;
-                bool isSolid = go->m_objectType == GameObjectType::Solid;
-                bool isThreat = false;
-                
-                if (isSolid) {
-                    if (gBox.origin.y < pBox.origin.y + pBox.size.height && gBox.origin.y + gBox.size.height > pBox.origin.y + 2.f) {
-                        isThreat = true;
-                    }
-                    if (gapCheckBox.intersectsRect(gBox)) {
-                        groundAhead = true;
-                    }
-                    // A solid block that we might land on
-                    if (gBox.origin.y >= pBox.origin.y - 15.f) {
-                        if (gBox.origin.x < firstSolidX) firstSolidX = gBox.origin.x;
-                    }
-                } else if (isHazard) {
-                    if (gBox.origin.y < pBox.origin.y + pBox.size.height && gBox.origin.y + gBox.size.height > pBox.origin.y) {
-                        isThreat = true;
+                // Gap check: Look for ground right under us or up to 5px ahead
+                if (go->m_objectType == GameObjectType::Solid) {
+                    if (objTop >= playerBottom - 15.f && objTop <= playerBottom + 5.f) {
+                        if (objRight >= playerRight - 15.f && objLeft <= playerRight + 5.f) {
+                            groundAhead = true;
+                        }
                     }
                 }
                 
-                if (isThreat && gBox.origin.x < closestThreatX) {
-                    closestThreatX = gBox.origin.x;
-                    closestThreat = go;
+                // Ignore objects completely behind us
+                if (objRight < playerLeft) continue;
+                // Ignore objects too far ahead
+                if (objLeft > playerRight + 200.f) continue;
+                
+                float dist = objLeft - playerRight;
+                
+                if (go->m_objectType == GameObjectType::Solid) {
+                    // Threat: Wall or staircase (higher than our bottom edge)
+                    if (objTop > playerBottom + 2.f && objBottom < playerTop) {
+                        if (dist <= solidTriggerDist) {
+                            mustJump = true;
+                        }
+                    }
+                    // Landing block detection
+                    if (objTop >= playerBottom - 15.f && objTop <= playerBottom + 5.f) {
+                        if (objLeft < firstSolidX && objLeft >= playerLeft) {
+                            firstSolidX = objLeft;
+                        }
+                    }
+                } else if (go->m_objectType == GameObjectType::Hazard) {
+                    // Threat: Spike on our level
+                    if (objTop > playerBottom + 2.f && objBottom < playerTop) {
+                        if (dist <= spikeTriggerDist) {
+                            mustJump = true;
+                        }
+                    }
                 }
             }
             
             // Pass 2: Check landing safety against hazards
             for (auto go : CCArrayExt<GameObject*>(this->m_objects)) {
                 if (!go) continue;
+                if (go->m_objectType != GameObjectType::Hazard) continue;
+                
                 auto gBox = go->boundingBox();
-                if (go->m_objectType == GameObjectType::Hazard) {
-                    // Only care about hazards BEFORE the first solid block
-                    if (gBox.origin.x < firstSolidX) {
-                        if (landingBox.intersectsRect(gBox)) {
-                            safeToJump = false;
-                        }
+                float objLeft = gBox.origin.x;
+                float objRight = gBox.origin.x + gBox.size.width;
+                
+                // Only care about hazards BEFORE the first solid block
+                if (objLeft < firstSolidX) {
+                    // If it's in our landing zone (jump length is ~130)
+                    if (objLeft < playerRight + 130.f && objRight > playerRight + 10.f) {
+                        safeToJump = false;
                     }
                 }
             }
         }
         
-        // Decide jump based on closest threat
-        if (closestThreat) {
-            auto gBox = closestThreat->boundingBox();
-            if (closestThreat->m_objectType == GameObjectType::Hazard) {
-                if (spikePathBox.intersectsRect(gBox)) mustJump = true;
-            } else if (closestThreat->m_objectType == GameObjectType::Solid) {
-                if (solidPathBox.intersectsRect(gBox)) mustJump = true;
-            }
-        }
-        
-        // If we are on the ground (above base level) and see a pit ahead, we must jump!
-        if (m_player1->m_isOnGround && !groundAhead && pBox.origin.y > 10.f) {
+        // Pit detection jump
+        if (m_player1->m_isOnGround && !groundAhead && playerBottom > 10.f) {
             mustJump = true;
         }
         
