@@ -467,39 +467,87 @@ class $modify(GlobalVisuals, PlayLayer) {
 // ========================================================
 //  TRAJECTORY BOT (SECRET ALGORITHMIC AUTO-PLAY)
 // ========================================================
-struct DeathRecord {
-    float x;
-    float y;
+#include <fstream>
+#include <Geode/utils/file.hpp>
+
+struct DeathPattern {
     bool isShipOrWave;
-    float actionX;
-    bool wasJump;
+    // Cube
+    float distToSolid;
+    float distToHazard;
+    bool safeToJump;
+    bool actionWasJump;
+    // Ship
+    float yVel;
+    float gapCenterYRel;
+    float crashYRel;
 };
-std::vector<DeathRecord> g_deaths;
+
+class BrainManager {
+public:
+    static std::vector<DeathPattern> patterns;
+    
+    static void load() {
+        patterns.clear();
+        auto path = Mod::get()->getSaveDir() / "bot_brain.txt";
+        std::ifstream file(path);
+        std::string line;
+        while (std::getline(file, line)) {
+            DeathPattern p;
+            int isS, sJ, aWJ;
+            if (sscanf(line.c_str(), "%d,%f,%f,%d,%d,%f,%f,%f",
+                &isS, &p.distToSolid, &p.distToHazard,
+                &sJ, &aWJ, &p.yVel, &p.gapCenterYRel, &p.crashYRel) == 8) {
+                p.isShipOrWave = isS;
+                p.safeToJump = sJ;
+                p.actionWasJump = aWJ;
+                patterns.push_back(p);
+            }
+        }
+    }
+    
+    static void save() {
+        auto path = Mod::get()->getSaveDir() / "bot_brain.txt";
+        std::ofstream file(path);
+        for (const auto& p : patterns) {
+            file << p.isShipOrWave << "," << p.distToSolid << "," << p.distToHazard << ","
+                 << p.safeToJump << "," << p.actionWasJump << ","
+                 << p.yVel << "," << p.gapCenterYRel << "," << p.crashYRel << "\n";
+        }
+    }
+    
+    static void addPattern(const DeathPattern& p) {
+        patterns.push_back(p);
+        save();
+    }
+};
+std::vector<DeathPattern> BrainManager::patterns;
 
 class $modify(TrajectoryBot, PlayLayer) {
     struct Fields {
         bool holdingJump = false;
         float ufoFlapTimer = 0.f;
         float prevPlayerY = 0.f;
-        float lastActionX = 0.f;
-        bool lastActionWasJump = false;
+        DeathPattern lastCubePattern;
+        DeathPattern lastShipPattern;
+        float lastShipPlayerY = 0.f;
     };
     
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
-        g_deaths.clear();
+        BrainManager::load(); // Load brain instead of clearing it!
         return PlayLayer::init(level, useReplay, dontCreateObjects);
     }
     
     void destroyPlayer(PlayerObject* player, GameObject* p1) {
         if (Mod::get()->getSettingValue<bool>("secret-bot-enabled")) {
             if (player == m_player1) {
-                DeathRecord rec;
-                rec.x = player->boundingBox().origin.x;
-                rec.y = player->boundingBox().origin.y;
-                rec.isShipOrWave = player->m_isShip || player->m_isDart;
-                rec.actionX = m_fields->lastActionX;
-                rec.wasJump = m_fields->lastActionWasJump;
-                g_deaths.push_back(rec);
+                if (player->m_isShip || player->m_isDart) {
+                    DeathPattern p = m_fields->lastShipPattern;
+                    p.crashYRel = player->boundingBox().origin.y - m_fields->lastShipPlayerY;
+                    BrainManager::addPattern(p);
+                } else {
+                    BrainManager::addPattern(m_fields->lastCubePattern);
+                }
             }
         }
         PlayLayer::destroyPlayer(player, p1);
@@ -648,14 +696,17 @@ class $modify(TrajectoryBot, PlayLayer) {
                 if (targetY < gapMin) targetY = gapMin;
             }
             
-            // Apply Death Memory Repulsion for Ship/Wave
-            for (const auto& death : g_deaths) {
-                if (!death.isShipOrWave) continue;
-                if (std::abs(playerX - death.x) < 60.f) {
-                    if (playerY < death.y) {
-                        targetY -= 30.f; // we died above, push down
+            // Apply Death Pattern Repulsion for Ship/Wave
+            for (const auto& pat : BrainManager::patterns) {
+                if (!pat.isShipOrWave) continue;
+                float dv = pat.yVel - yVel;
+                float dg = pat.gapCenterYRel - (targetY - playerY);
+                float dist = std::sqrt(dv*dv*0.1f + dg*dg); // Weight velocity less
+                if (dist < 20.f) { // Very similar situation!
+                    if (pat.crashYRel > 0.f) {
+                        targetY -= 30.f; // We crashed above us, push down
                     } else {
-                        targetY += 30.f; // we died below, push up
+                        targetY += 30.f; // We crashed below us, push up
                     }
                 }
             }
@@ -665,6 +716,13 @@ class $modify(TrajectoryBot, PlayLayer) {
             float predictedY = playerY + yVel * lookAheadTime;
             
             bool shouldGoUp = predictedY < targetY;
+            
+            // Store Ship Pattern
+            m_fields->lastShipPlayerY = playerY;
+            m_fields->lastShipPattern.isShipOrWave = true;
+            m_fields->lastShipPattern.yVel = yVel;
+            m_fields->lastShipPattern.gapCenterYRel = targetY - playerY;
+            m_fields->lastShipPattern.crashYRel = 0.f; // Populated on death
             
             if (isShip || isWave) {
                 if (shouldGoUp && !m_fields->holdingJump) {
@@ -745,7 +803,8 @@ class $modify(TrajectoryBot, PlayLayer) {
         }
         
         float solidTriggerDist = 15.f; // Optimal distance to clear stairs
-        float firstSolidX = 999999.f;
+        float firstSolidX = 99999.f;
+        float closestHazardX = 99999.f;
         
         // Calculate expected landing height (effBottom) to filter out ceiling blocks
         float groundY = -9999.f;
@@ -810,6 +869,9 @@ class $modify(TrajectoryBot, PlayLayer) {
                 } else if (go->m_objectType == GameObjectType::Hazard) {
                     // Threat: Spike on our level
                     if (objTop > playerBottom + 2.f && objBottom < playerTop) {
+                        if (objLeft < closestHazardX && objLeft >= playerRight - 20.f) {
+                            closestHazardX = objLeft;
+                        }
                         if (dist <= spikeTriggerDist && dist >= -20.f) {
                             mustJump = true;
                         }
@@ -844,34 +906,40 @@ class $modify(TrajectoryBot, PlayLayer) {
         // Decide if we should jump
         bool shouldJump = (mustJump && safeToJump && !groundAhead);
         
-        // Death Memory trial-and-error for Cube
-        for (const auto& death : g_deaths) {
-            if (death.isShipOrWave) continue;
-            // If we are near the exact spot we made a fatal decision
-            if (std::abs(playerX - death.actionX) < 15.f) {
-                if (death.wasJump && shouldJump) {
-                    shouldJump = false; // We died by jumping here! Wait!
-                } else if (!death.wasJump && !shouldJump && mustJump) {
-                    shouldJump = true; // We died by waiting here! Jump!
+        // Pattern Recognition (KNN) for Cube
+        float curDistToSolid = (firstSolidX != 99999.f) ? (firstSolidX - playerRight) : 99999.f;
+        float curDistToHazard = (closestHazardX != 99999.f) ? (closestHazardX - playerRight) : 99999.f;
+        
+        for (const auto& pat : BrainManager::patterns) {
+            if (pat.isShipOrWave) continue;
+            float ds = pat.distToSolid - curDistToSolid;
+            float dh = pat.distToHazard - curDistToHazard;
+            float dist = std::sqrt(ds*ds + dh*dh);
+            if (dist < 15.f && pat.safeToJump == safeToJump) { // Very similar geometry!
+                if (pat.actionWasJump && shouldJump) {
+                    shouldJump = false; // We jumped in this setup and died. Wait!
+                } else if (!pat.actionWasJump && !shouldJump && mustJump) {
+                    shouldJump = true; // We waited in this setup and died. Jump!
                 }
             }
         }
+        
+        // Save the pattern we are about to act on
+        m_fields->lastCubePattern.isShipOrWave = false;
+        m_fields->lastCubePattern.distToSolid = curDistToSolid;
+        m_fields->lastCubePattern.distToHazard = curDistToHazard;
+        m_fields->lastCubePattern.safeToJump = safeToJump;
+        m_fields->lastCubePattern.actionWasJump = shouldJump;
         
         if (shouldJump) {
             if (!m_fields->holdingJump) {
                 this->handleButton(true, 1, true);
                 m_fields->holdingJump = true;
             }
-            m_fields->lastActionX = playerX;
-            m_fields->lastActionWasJump = true;
         } else {
             if (m_fields->holdingJump) {
                 this->handleButton(false, 1, true);
                 m_fields->holdingJump = false;
-            }
-            if (mustJump) {
-                m_fields->lastActionX = playerX;
-                m_fields->lastActionWasJump = false;
             }
         }
     }
