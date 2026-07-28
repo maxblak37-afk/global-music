@@ -543,14 +543,13 @@ class $modify(TrajectoryBot, PlayLayer) {
     
     void handleButton(bool push, int button, bool player1) {
         if (push && player1 && !m_fields->botIsPressing) {
-            if (Mod::get()->getSettingValue<bool>("secret-bot-enabled")) {
-                if (m_player1 && !m_player1->m_isShip && !m_player1->m_isDart && !m_player1->m_isBird) {
-                    BrainPattern p = m_fields->lastCubePattern;
-                    p.isTeacherPattern = true;
-                    p.actionWasJump = true;
-                    BrainManager::addPattern(p);
-                    geode::Notification::create("Learned Jump!", geode::NotificationIcon::Success)->show();
-                }
+            // ALWAYS learn when bot is OFF! That's the point of Teacher mode!
+            if (m_player1 && !m_player1->m_isShip && !m_player1->m_isDart && !m_player1->m_isBird) {
+                BrainPattern p = m_fields->lastCubePattern;
+                p.isTeacherPattern = true;
+                p.actionWasJump = true;
+                BrainManager::addPattern(p);
+                geode::Notification::create("Learned Jump!", geode::NotificationIcon::Success)->show();
             }
         }
         PlayLayer::handleButton(push, button, player1);
@@ -573,8 +572,9 @@ class $modify(TrajectoryBot, PlayLayer) {
 
     void postUpdate(float dt) {
         PlayLayer::postUpdate(dt);
-        if (!Mod::get()->getSettingValue<bool>("secret-bot-enabled")) return;
         if (!m_player1) return;
+        
+        bool isBotEnabled = Mod::get()->getSettingValue<bool>("secret-bot-enabled");
         
         auto pBox = m_player1->boundingBox();
         float playerX = pBox.origin.x;
@@ -715,16 +715,18 @@ class $modify(TrajectoryBot, PlayLayer) {
             }
             
             // Apply Death Pattern Repulsion for Ship/Wave
-            for (const auto& pat : BrainManager::patterns) {
-                if (!pat.isShipOrWave) continue;
-                float dv = pat.yVel - yVel;
-                float dg = pat.gapCenterYRel - (targetY - playerY);
-                float dist = std::sqrt(dv*dv*0.1f + dg*dg); // Weight velocity less
-                if (dist < 20.f) { // Very similar situation!
-                    if (pat.crashYRel > 0.f) {
-                        targetY -= 30.f; // We crashed above us, push down
-                    } else {
-                        targetY += 30.f; // We crashed below us, push up
+            if (isBotEnabled) {
+                for (const auto& pat : BrainManager::patterns) {
+                    if (!pat.isShipOrWave) continue;
+                    float dv = pat.yVel - yVel;
+                    float dg = pat.gapCenterYRel - (targetY - playerY);
+                    float dist = std::sqrt(dv*dv*0.1f + dg*dg); // Weight velocity less
+                    if (dist < 20.f) { // Very similar situation!
+                        if (pat.crashYRel > 0.f) {
+                            targetY -= 30.f; // We crashed above us, push down
+                        } else {
+                            targetY += 30.f; // We crashed below us, push up
+                        }
                     }
                 }
             }
@@ -743,26 +745,28 @@ class $modify(TrajectoryBot, PlayLayer) {
             m_fields->lastShipPattern.gapCenterYRel = targetY - playerY;
             m_fields->lastShipPattern.crashYRel = 0.f; // Populated on death
             
-            if (isShip || isWave) {
-                if (shouldGoUp && !m_fields->holdingJump) {
-                    m_fields->botIsPressing = true;
-                    this->handleButton(true, 1, true);
-                    m_fields->botIsPressing = false;
-                    m_fields->holdingJump = true;
-                } else if (!shouldGoUp && m_fields->holdingJump) {
-                    m_fields->botIsPressing = true;
-                    this->handleButton(false, 1, true);
-                    m_fields->botIsPressing = false;
-                    m_fields->holdingJump = false;
-                }
-            } else if (isUfo) {
-                m_fields->ufoFlapTimer -= dt;
-                if (shouldGoUp && m_fields->ufoFlapTimer <= 0.f) {
-                    m_fields->botIsPressing = true;
-                    this->handleButton(true, 1, true);
-                    this->handleButton(false, 1, true); // instant tap
-                    m_fields->botIsPressing = false;
-                    m_fields->ufoFlapTimer = 0.2f;
+            if (isBotEnabled) {
+                if (isShip || isWave) {
+                    if (shouldGoUp && !m_fields->holdingJump) {
+                        m_fields->botIsPressing = true;
+                        this->handleButton(true, 1, true);
+                        m_fields->botIsPressing = false;
+                        m_fields->holdingJump = true;
+                    } else if (!shouldGoUp && m_fields->holdingJump) {
+                        m_fields->botIsPressing = true;
+                        this->handleButton(false, 1, true);
+                        m_fields->botIsPressing = false;
+                        m_fields->holdingJump = false;
+                    }
+                } else if (isUfo) {
+                    m_fields->ufoFlapTimer -= dt;
+                    if (shouldGoUp && m_fields->ufoFlapTimer <= 0.f) {
+                        m_fields->botIsPressing = true;
+                        this->handleButton(true, 1, true);
+                        this->handleButton(false, 1, true); // instant tap
+                        m_fields->botIsPressing = false;
+                        m_fields->ufoFlapTimer = 0.2f;
+                    }
                 }
             }
             
@@ -832,22 +836,30 @@ class $modify(TrajectoryBot, PlayLayer) {
         float closestHazardX = 99999.f;
         
         // Calculate expected landing height (effBottom) to filter out ceiling blocks
-        float groundY = -9999.f;
+        bool upside = m_player1->m_isUpsideDown;
+        float groundY = upside ? 9999.f : -9999.f;
         if (this->m_objects) {
             for (auto go : CCArrayExt<GameObject*>(this->m_objects)) {
                 if (!go || go->m_objectType != GameObjectType::Solid) continue;
                 auto gBox = go->boundingBox();
                 if (gBox.getMaxX() >= playerLeft && gBox.origin.x <= playerRight + 100.f) {
-                    if (gBox.getMaxY() <= playerBottom + 10.f && gBox.getMaxY() > groundY) {
-                        groundY = gBox.getMaxY();
+                    if (!upside) {
+                        if (gBox.getMaxY() <= playerBottom + 10.f && gBox.getMaxY() > groundY) {
+                            groundY = gBox.getMaxY();
+                        }
+                    } else {
+                        if (gBox.origin.y >= playerTop - 10.f && gBox.origin.y < groundY) {
+                            groundY = gBox.origin.y;
+                        }
                     }
                 }
             }
         }
         
-        float effBottom = m_player1->m_isOnGround ? playerBottom : groundY;
-        if (effBottom == -9999.f) effBottom = playerBottom;
-        float effTop = effBottom + pBox.size.height;
+        float effBottom = m_player1->m_isOnGround ? (upside ? playerTop : playerBottom) : groundY;
+        if (!upside && effBottom == -9999.f) effBottom = playerBottom;
+        if (upside && effBottom == 9999.f) effBottom = playerTop;
+        float effTop = upside ? (effBottom - pBox.size.height) : (effBottom + pBox.size.height);
         
         if (this->m_objects) {
             for (auto go : CCArrayExt<GameObject*>(this->m_objects)) {
@@ -860,9 +872,13 @@ class $modify(TrajectoryBot, PlayLayer) {
                 
                 // Gap check: Look for ground right under us or up to 25px ahead (bridges small gaps)
                 if (go->m_objectType == GameObjectType::Solid) {
-                    if (objTop >= effBottom - 15.f && objTop <= effBottom + 15.f) {
-                        if (objRight >= playerRight - 15.f && objLeft <= playerRight + 25.f) {
-                            groundAhead = true;
+                    if (!upside) {
+                        if (objTop >= effBottom - 15.f && objTop <= effBottom + 15.f) {
+                            if (objRight >= playerRight - 15.f && objLeft <= playerRight + 25.f) groundAhead = true;
+                        }
+                    } else {
+                        if (objBottom <= effBottom + 15.f && objBottom >= effBottom - 15.f) {
+                            if (objRight >= playerRight - 15.f && objLeft <= playerRight + 25.f) groundAhead = true;
                         }
                     }
                 }
@@ -873,27 +889,38 @@ class $modify(TrajectoryBot, PlayLayer) {
                 if (objLeft > playerRight + 200.f) continue;
                 
                 // Filter out non-threats relative to our expected ground path
-                if (objBottom >= effTop - 2.f) continue; // Ceiling block (we can walk under)
-                if (objTop <= effBottom + 2.f) continue; // Floor block (we can walk over)
+                if (!upside) {
+                    if (objBottom >= effTop - 2.f) continue; // Ceiling block
+                    if (objTop <= effBottom + 2.f) continue; // Floor block
+                } else {
+                    if (objTop <= effTop + 2.f) continue; // Floor block (under us)
+                    if (objBottom >= effBottom - 2.f) continue; // Ceiling block (above us)
+                }
                 
                 float dist = objLeft - playerRight;
+                bool isThreat = (!upside) ? (objTop > playerBottom + 2.f && objBottom < playerTop) 
+                                          : (objBottom < playerTop - 2.f && objTop > playerBottom);
                 
                 if (go->m_objectType == GameObjectType::Solid) {
                     // Threat: Wall or staircase
-                    if (objTop > playerBottom + 2.f && objBottom < playerTop) {
+                    if (isThreat) {
                         if (dist <= solidTriggerDist && dist >= -20.f) {
                             mustJump = true;
                         }
                     }
                     // Landing block detection
-                    if (objTop >= effBottom - 15.f && objTop <= effBottom + 5.f) {
-                        if (objLeft < firstSolidX && objLeft >= playerRight - 15.f) {
-                            firstSolidX = objLeft;
+                    if (!upside) {
+                        if (objTop >= effBottom - 15.f && objTop <= effBottom + 5.f) {
+                            if (objLeft < firstSolidX && objLeft >= playerRight - 15.f) firstSolidX = objLeft;
+                        }
+                    } else {
+                        if (objBottom <= effBottom + 15.f && objBottom >= effBottom - 5.f) {
+                            if (objLeft < firstSolidX && objLeft >= playerRight - 15.f) firstSolidX = objLeft;
                         }
                     }
                 } else if (go->m_objectType == GameObjectType::Hazard) {
                     // Threat: Spike on our level
-                    if (objTop > playerBottom + 2.f && objBottom < playerTop) {
+                    if (isThreat) {
                         if (objLeft < closestHazardX && objLeft >= playerRight - 20.f) {
                             closestHazardX = objLeft;
                         }
@@ -924,8 +951,9 @@ class $modify(TrajectoryBot, PlayLayer) {
         }
         
         // Pit detection jump
-        if (m_player1->m_isOnGround && !groundAhead && playerBottom > 10.f) {
-            mustJump = true;
+        if (m_player1->m_isOnGround && !groundAhead) {
+            if (!upside && playerBottom > 10.f) mustJump = true;
+            if (upside && playerTop < 1000.f) mustJump = true; // just a rough bound
         }
         
         // Decide if we should jump
@@ -935,19 +963,21 @@ class $modify(TrajectoryBot, PlayLayer) {
         float curDistToSolid = (firstSolidX != 99999.f) ? (firstSolidX - playerRight) : 99999.f;
         float curDistToHazard = (closestHazardX != 99999.f) ? (closestHazardX - playerRight) : 99999.f;
         
-        for (const auto& pat : BrainManager::patterns) {
-            if (pat.isShipOrWave) continue;
-            float ds = pat.distToSolid - curDistToSolid;
-            float dh = pat.distToHazard - curDistToHazard;
-            float dist = std::sqrt(ds*ds + dh*dh);
-            if (dist < 15.f && pat.safeToJump == safeToJump) { // Very similar geometry!
-                if (pat.isTeacherPattern) {
-                    if (pat.actionWasJump) shouldJump = true; // We were taught to jump here!
-                } else {
-                    if (pat.actionWasJump && shouldJump) {
-                        shouldJump = false; // We jumped in this setup and died. Wait!
-                    } else if (!pat.actionWasJump && !shouldJump && mustJump) {
-                        shouldJump = true; // We waited in this setup and died. Jump!
+        if (isBotEnabled) {
+            for (const auto& pat : BrainManager::patterns) {
+                if (pat.isShipOrWave) continue;
+                float ds = pat.distToSolid - curDistToSolid;
+                float dh = pat.distToHazard - curDistToHazard;
+                float dist = std::sqrt(ds*ds + dh*dh);
+                if (dist < 15.f && pat.safeToJump == safeToJump) { // Very similar geometry!
+                    if (pat.isTeacherPattern) {
+                        if (pat.actionWasJump) shouldJump = true; // We were taught to jump here!
+                    } else {
+                        if (pat.actionWasJump && shouldJump) {
+                            shouldJump = false; // We jumped in this setup and died. Wait!
+                        } else if (!pat.actionWasJump && !shouldJump && mustJump) {
+                            shouldJump = true; // We waited in this setup and died. Jump!
+                        }
                     }
                 }
             }
@@ -961,19 +991,21 @@ class $modify(TrajectoryBot, PlayLayer) {
         m_fields->lastCubePattern.safeToJump = safeToJump;
         m_fields->lastCubePattern.actionWasJump = shouldJump;
         
-        if (shouldJump) {
-            if (!m_fields->holdingJump) {
-                m_fields->botIsPressing = true;
-                this->handleButton(true, 1, true);
-                m_fields->botIsPressing = false;
-                m_fields->holdingJump = true;
-            }
-        } else {
-            if (m_fields->holdingJump) {
-                m_fields->botIsPressing = true;
-                this->handleButton(false, 1, true);
-                m_fields->botIsPressing = false;
-                m_fields->holdingJump = false;
+        if (isBotEnabled) {
+            if (shouldJump) {
+                if (!m_fields->holdingJump) {
+                    m_fields->botIsPressing = true;
+                    this->handleButton(true, 1, true);
+                    m_fields->botIsPressing = false;
+                    m_fields->holdingJump = true;
+                }
+            } else {
+                if (m_fields->holdingJump) {
+                    m_fields->botIsPressing = true;
+                    this->handleButton(false, 1, true);
+                    m_fields->botIsPressing = false;
+                    m_fields->holdingJump = false;
+                }
             }
         }
     }
