@@ -471,6 +471,7 @@ class $modify(TrajectoryBot, PlayLayer) {
     struct Fields {
         bool holdingJump = false;
         float ufoFlapTimer = 0.f;
+        float prevPlayerY = 0.f;
     };
 
     void postUpdate(float dt) {
@@ -478,16 +479,24 @@ class $modify(TrajectoryBot, PlayLayer) {
         if (!Mod::get()->getSettingValue<bool>("secret-bot-enabled")) return;
         if (!m_player1) return;
         
+        auto pBox = m_player1->boundingBox();
+        float playerX = pBox.origin.x;
+        float playerY = pBox.origin.y + pBox.size.height / 2.f; // center Y
+        
+        float yVel = 0.f;
+        if (m_fields->prevPlayerY != 0.f && dt > 0.f) {
+            float diff = playerY - m_fields->prevPlayerY;
+            if (std::abs(diff) < 150.f) { // ignore teleports/resets
+                yVel = diff / dt;
+            }
+        }
+        m_fields->prevPlayerY = playerY;
+        
         bool isShip = m_player1->m_isShip;
         bool isUfo = m_player1->m_isBird;
         bool isWave = m_player1->m_isDart;
         
-        auto pBox = m_player1->boundingBox();
-        
         if (isShip || isUfo || isWave) {
-            float playerX = pBox.origin.x;
-            float playerY = pBox.origin.y + pBox.size.height / 2.f; // center Y
-            
             // Advanced Pathfinding: Look-ahead gates
             struct Range { float min, max; };
             const int NUM_SLICES = 10;
@@ -565,6 +574,12 @@ class $modify(TrajectoryBot, PlayLayer) {
                         }
                         
                         float diff = std::abs(gapCenter - currPathY);
+                        
+                        // Penalty for open sky so we prefer bounded tunnels when dropping from portals
+                        if (gapMax > 800.f) {
+                            diff += 300.f; 
+                        }
+                        
                         if (diff < minDiff) {
                             minDiff = diff;
                             bestGapMin = gapMin;
@@ -602,7 +617,11 @@ class $modify(TrajectoryBot, PlayLayer) {
                 if (targetY < gapMin) targetY = gapMin;
             }
             
-            bool shouldGoUp = playerY < targetY;
+            // Predict future Y to act as a PD controller (brakes downward velocity)
+            float lookAheadTime = isWave ? 0.15f : 0.25f;
+            float predictedY = playerY + yVel * lookAheadTime;
+            
+            bool shouldGoUp = predictedY < targetY;
             
             if (isShip || isWave) {
                 if (shouldGoUp && !m_fields->holdingJump) {
