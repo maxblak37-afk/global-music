@@ -605,8 +605,26 @@ class $modify(TrajectoryBot, PlayLayer) {
             spikeTriggerDist = -2.f; // Jump slightly early for double spikes
         }
         
-        float solidTriggerDist = 15.f; // Optimal distance to clear stairs (was 35)
+        float solidTriggerDist = 15.f; // Optimal distance to clear stairs
         float firstSolidX = 999999.f;
+        
+        // Calculate expected landing height (effBottom) to filter out ceiling blocks
+        float groundY = -9999.f;
+        if (this->m_objects) {
+            for (auto go : CCArrayExt<GameObject*>(this->m_objects)) {
+                if (!go || go->m_objectType != GameObjectType::Solid) continue;
+                auto gBox = go->boundingBox();
+                if (gBox.getMaxX() >= playerLeft && gBox.origin.x <= playerRight + 100.f) {
+                    if (gBox.getMaxY() <= playerBottom + 10.f && gBox.getMaxY() > groundY) {
+                        groundY = gBox.getMaxY();
+                    }
+                }
+            }
+        }
+        
+        float effBottom = m_player1->m_isOnGround ? playerBottom : groundY;
+        if (effBottom == -9999.f) effBottom = playerBottom;
+        float effTop = effBottom + pBox.size.height;
         
         if (this->m_objects) {
             for (auto go : CCArrayExt<GameObject*>(this->m_objects)) {
@@ -617,10 +635,10 @@ class $modify(TrajectoryBot, PlayLayer) {
                 float objBottom = gBox.origin.y;
                 float objTop = gBox.origin.y + gBox.size.height;
                 
-                // Gap check: Look for ground right under us or up to 5px ahead
+                // Gap check: Look for ground right under us or up to 25px ahead (bridges small gaps)
                 if (go->m_objectType == GameObjectType::Solid) {
-                    if (objTop >= playerBottom - 15.f && objTop <= playerBottom + 5.f) {
-                        if (objRight >= playerRight - 15.f && objLeft <= playerRight + 5.f) {
+                    if (objTop >= effBottom - 15.f && objTop <= effBottom + 15.f) {
+                        if (objRight >= playerRight - 15.f && objLeft <= playerRight + 25.f) {
                             groundAhead = true;
                         }
                     }
@@ -631,17 +649,21 @@ class $modify(TrajectoryBot, PlayLayer) {
                 // Ignore objects too far ahead
                 if (objLeft > playerRight + 200.f) continue;
                 
+                // Filter out non-threats relative to our expected ground path
+                if (objBottom >= effTop - 2.f) continue; // Ceiling block (we can walk under)
+                if (objTop <= effBottom + 2.f) continue; // Floor block (we can walk over)
+                
                 float dist = objLeft - playerRight;
                 
                 if (go->m_objectType == GameObjectType::Solid) {
-                    // Threat: Wall or staircase (higher than our bottom edge)
+                    // Threat: Wall or staircase
                     if (objTop > playerBottom + 2.f && objBottom < playerTop) {
                         if (dist <= solidTriggerDist && dist >= -20.f) {
                             mustJump = true;
                         }
                     }
                     // Landing block detection
-                    if (objTop >= playerBottom - 15.f && objTop <= playerBottom + 5.f) {
+                    if (objTop >= effBottom - 15.f && objTop <= effBottom + 5.f) {
                         if (objLeft < firstSolidX && objLeft >= playerRight - 15.f) {
                             firstSolidX = objLeft;
                         }
