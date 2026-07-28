@@ -485,46 +485,123 @@ class $modify(TrajectoryBot, PlayLayer) {
         auto pBox = m_player1->boundingBox();
         
         if (isShip || isUfo || isWave) {
-            float lookAhead = 150.f; // Look further for flying
             float playerX = pBox.origin.x;
             float playerY = pBox.origin.y + pBox.size.height / 2.f; // center Y
             
-            float floorY = 0.f; // Base ground
-            float ceilingY = 1000.f; // Default high ceiling
+            // Advanced Pathfinding: Look-ahead gates
+            struct Range { float min, max; };
+            const int NUM_SLICES = 10;
+            const float SLICE_WIDTH = 30.f;
             
-            if (this->m_objects) {
-                for (auto go : CCArrayExt<GameObject*>(this->m_objects)) {
-                    if (!go) continue;
-                    auto gBox = go->boundingBox();
-                    
-                    // Only consider objects in our immediate path ahead
-                    if (gBox.origin.x + gBox.size.width < playerX) continue;
-                    if (gBox.origin.x > playerX + lookAhead) continue;
-                    
-                    bool isObstacle = (go->m_objectType == GameObjectType::Solid || go->m_objectType == GameObjectType::Hazard);
-                    if (!isObstacle) continue;
-                    
-                    float objCenterY = gBox.origin.y + gBox.size.height / 2.f;
-                    
-                    if (objCenterY < playerY) {
-                        float topEdge = gBox.origin.y + gBox.size.height;
-                        if (topEdge > floorY) {
-                            floorY = topEdge;
-                        }
-                    } else {
-                        float bottomEdge = gBox.origin.y;
-                        if (bottomEdge < ceilingY) {
-                            ceilingY = bottomEdge;
+            Range sliceGaps[NUM_SLICES];
+            float currPathY = playerY;
+            
+            for (int i = 0; i < NUM_SLICES; i++) {
+                float sliceStartX = playerX + i * SLICE_WIDTH;
+                float sliceEndX = sliceStartX + SLICE_WIDTH;
+                
+                Range obs[64];
+                int obsCount = 0;
+                
+                if (this->m_objects) {
+                    for (auto go : CCArrayExt<GameObject*>(this->m_objects)) {
+                        if (!go) continue;
+                        bool isObstacle = (go->m_objectType == GameObjectType::Solid || go->m_objectType == GameObjectType::Hazard);
+                        if (!isObstacle) continue;
+                        
+                        auto gBox = go->boundingBox();
+                        if (gBox.getMaxX() >= sliceStartX && gBox.origin.x <= sliceEndX) {
+                            if (obsCount < 64) {
+                                obs[obsCount++] = {gBox.origin.y, gBox.getMaxY()};
+                            }
                         }
                     }
                 }
+                
+                // Sort obstacles by min Y
+                for (int j = 0; j < obsCount - 1; j++) {
+                    for (int k = 0; k < obsCount - j - 1; k++) {
+                        if (obs[k].min > obs[k+1].min) {
+                            auto temp = obs[k];
+                            obs[k] = obs[k+1];
+                            obs[k+1] = temp;
+                        }
+                    }
+                }
+                
+                // Merge overlapping obstacle ranges
+                Range merged[64];
+                int mergedCount = 0;
+                if (obsCount > 0) {
+                    merged[0] = obs[0];
+                    mergedCount = 1;
+                    for (int j = 1; j < obsCount; j++) {
+                        if (obs[j].min <= merged[mergedCount-1].max) {
+                            if (obs[j].max > merged[mergedCount-1].max) {
+                                merged[mergedCount-1].max = obs[j].max;
+                            }
+                        } else {
+                            merged[mergedCount++] = obs[j];
+                        }
+                    }
+                }
+                
+                // Find best gap
+                float bestGapMin = 0.f;
+                float bestGapMax = 1000.f;
+                float minDiff = 99999.f;
+                
+                float prevMax = 0.f;
+                for (int j = 0; j <= mergedCount; j++) {
+                    float gapMin = prevMax;
+                    float gapMax = (j < mergedCount) ? merged[j].min : 1000.f;
+                    
+                    if (gapMax - gapMin >= 25.f) { // Valid gap for player
+                        float gapCenter;
+                        if (gapMax > 800.f) {
+                            gapCenter = std::max(gapMin + 50.f, currPathY);
+                        } else {
+                            gapCenter = (gapMin + gapMax) / 2.f;
+                        }
+                        
+                        float diff = std::abs(gapCenter - currPathY);
+                        if (diff < minDiff) {
+                            minDiff = diff;
+                            bestGapMin = gapMin;
+                            bestGapMax = gapMax;
+                        }
+                    }
+                    if (j < mergedCount) {
+                        prevMax = merged[j].max;
+                    }
+                }
+                
+                // Clamp sky max safely for backwards target propagation
+                if (bestGapMax > 800.f) bestGapMax = bestGapMin + 100.f;
+                
+                sliceGaps[i] = {bestGapMin, bestGapMax};
+                currPathY = (bestGapMin + bestGapMax) / 2.f;
             }
             
-            if (ceilingY == 1000.f) {
-                ceilingY = floorY + 150.f;
+            // Backward pass to find optimal target Y that hugs corners
+            float targetY = (sliceGaps[NUM_SLICES-1].min + sliceGaps[NUM_SLICES-1].max) / 2.f;
+            
+            for (int i = NUM_SLICES - 2; i >= 0; i--) {
+                float padding = (isWave) ? 10.f : 16.f; // Wave is smaller
+                float gapMin = sliceGaps[i].min + padding;
+                float gapMax = sliceGaps[i].max - padding;
+                
+                if (gapMax < gapMin) {
+                    float center = (sliceGaps[i].min + sliceGaps[i].max) / 2.f;
+                    gapMin = center;
+                    gapMax = center;
+                }
+                
+                // Pull target towards this gate if it's out of bounds
+                if (targetY > gapMax) targetY = gapMax;
+                if (targetY < gapMin) targetY = gapMin;
             }
             
-            float targetY = (floorY + ceilingY) / 2.f;
             bool shouldGoUp = playerY < targetY;
             
             if (isShip || isWave) {
