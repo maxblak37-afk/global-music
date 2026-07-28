@@ -579,7 +579,7 @@ class $modify(TrajectoryBot, PlayLayer) {
                 }
                 
                 // Ignore objects completely behind us
-                if (objRight < playerLeft) continue;
+                if (objRight < playerRight - 15.f) continue;
                 // Ignore objects too far ahead
                 if (objLeft > playerRight + 200.f) continue;
                 
@@ -594,7 +594,7 @@ class $modify(TrajectoryBot, PlayLayer) {
                     }
                     // Landing block detection
                     if (objTop >= playerBottom - 15.f && objTop <= playerBottom + 5.f) {
-                        if (objLeft < firstSolidX && objLeft >= playerLeft) {
+                        if (objLeft < firstSolidX && objLeft >= playerRight - 15.f) {
                             firstSolidX = objLeft;
                         }
                     }
@@ -619,8 +619,8 @@ class $modify(TrajectoryBot, PlayLayer) {
                 
                 // Only care about hazards BEFORE the first solid block
                 if (objLeft < firstSolidX) {
-                    // If it's in our landing zone (jump length is ~130)
-                    if (objLeft < playerRight + 130.f && objRight > playerRight + 10.f) {
+                    // If it's in our landing zone (~90 to 140 pixels ahead)
+                    if (objLeft < playerRight + 140.f && objRight > playerRight + 90.f) {
                         safeToJump = false;
                     }
                 }
