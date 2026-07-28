@@ -556,7 +556,55 @@ class $modify(TrajectoryBot, PlayLayer) {
         float playerBottom = pBox.origin.y;
         float playerTop = pBox.origin.y + pBox.size.height;
         
+        // --- Pass 0: Detect hazard clusters to adjust jump timing for double/triple spikes ---
+        float closestHazardLeft = 999999.f;
+        float closestHazardRight = 0.f;
+        
+        if (this->m_objects) {
+            for (auto go : CCArrayExt<GameObject*>(this->m_objects)) {
+                if (!go) continue;
+                if (go->m_objectType == GameObjectType::Hazard) {
+                    auto gBox = go->boundingBox();
+                    float oLeft = gBox.origin.x;
+                    // Only consider hazards on our level and slightly ahead
+                    if (gBox.getMaxY() > playerBottom + 2.f && gBox.origin.y < playerTop) {
+                        float d = oLeft - playerRight;
+                        if (d > -30.f && oLeft < closestHazardLeft) {
+                            closestHazardLeft = oLeft;
+                            closestHazardRight = gBox.getMaxX();
+                        }
+                    }
+                }
+            }
+            
+            if (closestHazardLeft != 999999.f) {
+                // Expand cluster up to 3 times
+                for (int i = 0; i < 3; i++) {
+                    for (auto go : CCArrayExt<GameObject*>(this->m_objects)) {
+                        if (!go) continue;
+                        if (go->m_objectType == GameObjectType::Hazard) {
+                            auto gBox = go->boundingBox();
+                            if (gBox.getMaxY() > playerBottom + 2.f && gBox.origin.y < playerTop) {
+                                float oLeft = gBox.origin.x;
+                                float oRight = gBox.getMaxX();
+                                if (oLeft <= closestHazardRight + 5.f && oRight > closestHazardRight) {
+                                    closestHazardRight = oRight;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        float clusterWidth = closestHazardRight - closestHazardLeft;
         float spikeTriggerDist = -8.f; // 2 pixels clearance from visual hitbox
+        if (clusterWidth >= 80.f) {
+            spikeTriggerDist = 12.f; // Jump very early for triple spikes
+        } else if (clusterWidth >= 50.f) {
+            spikeTriggerDist = -2.f; // Jump slightly early for double spikes
+        }
+        
         float solidTriggerDist = 35.f; // Jump early for walls/stairs
         float firstSolidX = 999999.f;
         
@@ -588,7 +636,7 @@ class $modify(TrajectoryBot, PlayLayer) {
                 if (go->m_objectType == GameObjectType::Solid) {
                     // Threat: Wall or staircase (higher than our bottom edge)
                     if (objTop > playerBottom + 2.f && objBottom < playerTop) {
-                        if (dist <= solidTriggerDist) {
+                        if (dist <= solidTriggerDist && dist >= solidTriggerDist - 40.f) {
                             mustJump = true;
                         }
                     }
@@ -601,7 +649,7 @@ class $modify(TrajectoryBot, PlayLayer) {
                 } else if (go->m_objectType == GameObjectType::Hazard) {
                     // Threat: Spike on our level
                     if (objTop > playerBottom + 2.f && objBottom < playerTop) {
-                        if (dist <= spikeTriggerDist) {
+                        if (dist <= spikeTriggerDist && dist >= spikeTriggerDist - 40.f) {
                             mustJump = true;
                         }
                     }
